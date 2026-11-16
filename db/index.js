@@ -19,7 +19,8 @@ function buildPoolConfig(cfg) {
       database: cfg.dbName,
       user: cfg.dbUser || '',
       password: cfg.dbPass || '',
-      port: cfg.dbPort || 3306
+      port: cfg.dbPort || 3306,
+      authDb: (config.auth && config.auth.dbName) || 'cohauth'
     };
   }
   const dbName = cfg.dbName;
@@ -85,10 +86,41 @@ async function connectPool(cfg) {
   const conn = new driverModule.ConnectionPool(cfg);
   conn._driver = driverModule; // store actual module for .Int etc
   await conn.connect();
+  useAuthDbName(conn);
   //console.log('[DB DEBUG] Connected using driver:', driverName);
   return conn;
 }
 
+
+// Some queries name the auth database as cohauth.dbo.x: on SQL Server they
+// get the configured name (cohauth_Live, ...). MariaDB's pools drop the
+// database part altogether (db/mariadb.js).
+function authDbQualifier() {
+  const name = config.auth && config.auth.dbName;
+  return name && name.toLowerCase() !== 'cohauth' ? `[${name.replace(/]/g, ']]')}].dbo.` : null;
+}
+
+function patchRequest(req) {
+  const query = req.query.bind(req);
+  req.query = (text, ...rest) => {
+    const q = authDbQualifier();
+    if (q && typeof text === 'string') text = text.replace(/\bcohauth\s*\.\s*dbo\s*\./gi, q);
+    return query(text, ...rest);
+  };
+  return req;
+}
+
+function useAuthDbName(conn) {
+  const request = conn.request.bind(conn);
+  conn.request = () => patchRequest(request());
+  const transaction = conn.transaction.bind(conn);
+  conn.transaction = () => {
+    const tx = transaction();
+    const txRequest = tx.request.bind(tx);
+    tx.request = () => patchRequest(txRequest());
+    return tx;
+  };
+}
 
 let authPool = null;
 async function getAuthPool() {

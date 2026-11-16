@@ -5,6 +5,7 @@
 // for MariaDB. Strings and quoted names are left alone.
 //
 // What it rewrites (outside 'strings'):
+//   cohauth.dbo.Table                      -> `<auth database>`.Table
 //   db.dbo.Table, [db].dbo.Table, dbo.Table -> Table (each pool is one database)
 //   [Name]                                 -> `Name`
 //   @param                                 -> ? (values bound in order)
@@ -59,8 +60,10 @@ function tokens(sql) {
 }
 
 // One statement's code (strings already set aside as placeholders).
-function rewriteCode(code) {
+function rewriteCode(code, authDb) {
   let s = code;
+  // cohauth.dbo.x is the auth database's x, whichever pool runs it.
+  if (authDb) s = s.replace(/\bcohauth\s*\.\s*dbo\s*\.\s*/gi, `\`${authDb.replace(/`/g, '``')}\`.`);
   s = s.replace(/(?:\[[^\]\s]+\]|\b\w+)\s*\.\s*dbo\s*\.\s*/gi, '');   // db.dbo.
   s = s.replace(/\[dbo\]\s*\.\s*/gi, '').replace(/\bdbo\s*\.\s*/gi, '');
   s = s.replace(/\[([^\]\r\n]+)\]/g, '`$1`');
@@ -85,7 +88,8 @@ function rewriteCode(code) {
 }
 
 // SQL Server SQL -> { text, names } for MariaDB, @params as ? in order.
-function translateSql(sql) {
+// authDb: the auth database's name, for cohauth.dbo.x.
+function translateSql(sql, authDb) {
   const parts = tokens(sql);
   // Rewrite code with each string replaced by a placeholder, so patterns
   // that span strings (CONVERT(..., 'x')) still match.
@@ -103,7 +107,7 @@ function translateSql(sql) {
   }
   // Statement by statement: TOP needs a LIMIT at the end of its own.
   const statements = code.split(';').map(st => {
-    let t = rewriteCode(st);
+    let t = rewriteCode(st, authDb);
     const top = t.match(/\bSELECT\s+(DISTINCT\s+)?TOP\s*(\(\s*([^)]+?)\s*\)|(\d+|@\w+))\s*/i);
     if (top) {
       const n = top[3] || top[4];
@@ -148,8 +152,9 @@ function shapeResult(res) {
 const ISO_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/;
 
 class Request {
-  constructor(run) {
+  constructor(run, authDb) {
     this._run = run;
+    this._authDb = authDb;
     this._params = {};
   }
   // input(name, value) or input(name, type, value), as mssql takes it.
@@ -158,7 +163,7 @@ class Request {
     return this;
   }
   async query(sql) {
-    const { text, names } = translateSql(sql);
+    const { text, names } = translateSql(sql, this._authDb);
     const values = names.map(n => {
       if (!(n in this._params)) throw new Error(`[DB] SQL parameter @${n} has no value`);
       const v = this._params[n];
@@ -185,7 +190,7 @@ class Transaction {
   }
   request() {
     if (!this._conn) throw new Error('[DB] transaction not begun');
-    return new Request((t, v) => this._conn.query(t, v));
+    return new Request((t, v) => this._conn.query(t, v), this._pool.authDb);
   }
   async commit() {
     try { await this._conn.commit(); } finally { this._conn.release(); this._conn = null; }
@@ -200,6 +205,7 @@ class Pool {
   constructor(cfg) {
     this.engine = 'mariadb';
     this.config = cfg;
+    this.authDb = cfg.authDb || null;   // for cohauth.dbo.x (db/index.js)
     if (!mysql) mysql = require('mysql2/promise');
     this._pool = mysql.createPool({
       host: cfg.server,
@@ -225,7 +231,7 @@ class Pool {
     return this;
   }
   request() {
-    return new Request((t, v) => this._pool.query(t, v));
+    return new Request((t, v) => this._pool.query(t, v), this.authDb);
   }
   transaction() {
     return new Transaction(this);

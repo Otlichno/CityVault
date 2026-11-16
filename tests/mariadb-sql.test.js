@@ -8,7 +8,7 @@ const cases = [
   ['SELECT email, tracker FROM dbo.user_account WHERE account = @account',
    'SELECT email, tracker FROM user_account WHERE account = ?', ['account']],
   ['SELECT account, role FROM cohauth.dbo.user_account WHERE account = @username',
-   'SELECT account, role FROM user_account WHERE account = ?', ['username']],
+   'SELECT account, role FROM `cohauth`.user_account WHERE account = ?', ['username']],
   ['SELECT DISTINCT AuthId FROM [cohdb_Play].dbo.Ents WHERE Name COLLATE SQL_Latin1_General_CP1_CI_AS LIKE @search',
    'SELECT DISTINCT AuthId FROM Ents WHERE Name LIKE ?', ['search']],
   ['UPDATE dbo.user_auth SET password = CONVERT(BINARY(128), @password) WHERE account = @account',
@@ -21,7 +21,7 @@ const cases = [
   ['SELECT TOP 9 e.Name FROM dbo.Ents e WHERE e.AccessLevel <= @maxAccess ORDER BY e.LastActive DESC\n',
    'SELECT e.Name FROM Ents e WHERE e.AccessLevel <= ? ORDER BY e.LastActive DESC LIMIT 9\n', ['maxAccess']],
   ['SELECT ua.uid FROM cohauth.dbo.user_account ua ORDER BY ua.account OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY',
-   'SELECT ua.uid FROM user_account ua ORDER BY ua.account LIMIT ? OFFSET ?', ['limit', 'offset']],
+   'SELECT ua.uid FROM `cohauth`.user_account ua ORDER BY ua.account LIMIT ? OFFSET ?', ['limit', 'offset']],
   ["SELECT * FROM dbo.[Badges] WHERE ContainerId = @id", 'SELECT * FROM `Badges` WHERE ContainerId = ?', ['id']],
   ["SELECT COUNT(*) AS existsCheck FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'Ents'",
    "SELECT COUNT(*) AS existsCheck FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'Ents'", []],
@@ -32,7 +32,7 @@ const cases = [
   ['SELECT DB_NAME() AS db', 'SELECT DATABASE() AS db', []],
   ['WHERE DATEPART(mm, e.DateCreated) = @month', 'WHERE MONTH( e.DateCreated) = ?', ['month']],
   ['CREATE TABLE cohauth.dbo.user_notes ( id INT IDENTITY(1,1) PRIMARY KEY, created_at DATETIME DEFAULT GETUTCDATE(), is_admin BIT NOT NULL DEFAULT 0 );',
-   'CREATE TABLE user_notes ( id INT AUTO_INCREMENT PRIMARY KEY, created_at DATETIME DEFAULT UTC_TIMESTAMP(), is_admin TINYINT(1) NOT NULL DEFAULT 0 );', []],
+   'CREATE TABLE `cohauth`.user_notes ( id INT AUTO_INCREMENT PRIMARY KEY, created_at DATETIME DEFAULT UTC_TIMESTAMP(), is_admin TINYINT(1) NOT NULL DEFAULT 0 );', []],
   // Strings stay as they are: @, dbo., [x], TOP inside them.
   ["SELECT 'me@x.com dbo.y [z] TOP 3' AS s, @a FROM t WHERE n = N'Ünï'",
    "SELECT 'me@x.com dbo.y [z] TOP 3' AS s, ? FROM t WHERE n = 'Ünï'", ['a']],
@@ -43,7 +43,7 @@ const cases = [
 
 let failed = 0;
 for (const [input, text, names] of cases) {
-  const got = translateSql(input);
+  const got = translateSql(input, 'cohauth');
   try {
     assert.strictEqual(got.text, text);
     assert.deepStrictEqual(got.names, names);
@@ -52,6 +52,13 @@ for (const [input, text, names] of cases) {
     failed++;
     console.log('FAILED:', input, '\n  got: ', got.text, got.names, '\n  want:', text, names);
   }
+}
+
+// The auth database by its configured name, from any pool.
+{
+  const got = translateSql('DELETE FROM cohauth.dbo.CostumeHash WHERE ServerKey = @k', 'cohauth_Play');
+  assert.strictEqual(got.text, 'DELETE FROM `cohauth_Play`.CostumeHash WHERE ServerKey = ?');
+  console.log('ok: cohauth.dbo. is the auth database by its name');
 }
 
 // mysql2 results in the mssql package's shape.
