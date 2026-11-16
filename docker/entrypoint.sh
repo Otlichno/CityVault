@@ -47,10 +47,12 @@ if (env.CITYVAULT_SESSION_SECRET) cfg.session_secret = env.CITYVAULT_SESSION_SEC
 if (!cfg.session_secret || cfg.session_secret === 'ChangeThisPLEASE')
   cfg.session_secret = crypto.randomBytes(32).toString('hex');
 
+// CITYVAULT_DB_HOST may carry the port as "host,port" (SQL Server's way).
+const [hostOnly, hostPort] = String(env.CITYVAULT_DB_HOST || '').split(',');
 const db = {
   engine: env.CITYVAULT_DB_ENGINE,
-  dbHost: env.CITYVAULT_DB_HOST,
-  dbPort: num(env.CITYVAULT_DB_PORT),
+  dbHost: hostOnly || undefined,
+  dbPort: num(env.CITYVAULT_DB_PORT || hostPort),
   dbUser: env.CITYVAULT_DB_USER,
   dbPass: env.CITYVAULT_DB_PASSWORD,
 };
