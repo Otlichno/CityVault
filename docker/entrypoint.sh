@@ -48,7 +48,11 @@ if (!cfg.session_secret || cfg.session_secret === 'ChangeThisPLEASE')
   cfg.session_secret = crypto.randomBytes(32).toString('hex');
 
 // CITYVAULT_DB_HOST may carry the port as "host,port" (SQL Server's way).
-const [hostOnly, hostPort] = String(env.CITYVAULT_DB_HOST || '').split(',');
+let [hostOnly, hostPort] = String(env.CITYVAULT_DB_HOST || '').split(',');
+// A database the host's own programs reach at 127.0.0.1 is, from inside a
+// container on its own network, at CITYVAULT_DB_LOCAL_HOST (the host's
+// address).
+if (['127.0.0.1', 'localhost'].includes(hostOnly) && env.CITYVAULT_DB_LOCAL_HOST) hostOnly = env.CITYVAULT_DB_LOCAL_HOST;
 const db = {
   engine: env.CITYVAULT_DB_ENGINE,
   dbHost: hostOnly || undefined,

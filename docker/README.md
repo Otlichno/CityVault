@@ -20,6 +20,7 @@ the admin pages leave it.
 |---|---|
 | `CITYVAULT_DB_ENGINE` | `mssql` (SQL Server, the default) or `mariadb` |
 | `CITYVAULT_DB_HOST`, `CITYVAULT_DB_PORT` | The database server, `host` or `host,port` (port 1433 / 3306 by default) |
+| `CITYVAULT_DB_LOCAL_HOST` | Used instead of a database host of `127.0.0.1`/`localhost` (the Docker host's address, as the container sees it) |
 | `CITYVAULT_DB_USER`, `CITYVAULT_DB_PASSWORD` (or `_FILE`) | Its login |
 | `CITYVAULT_AUTH_DB`, `CITYVAULT_CHAT_DB`, `CITYVAULT_GAME_DB` | Database names (`cohauth`, `cohchat`, `cohdb`) |
 | `CITYVAULT_SERVER_KEY`, `CITYVAULT_SERVER_LABEL` | The shard's key in the config and its name on the site |
