@@ -6,7 +6,8 @@
     "start": "node server.mjs",
     "postinstall": "node patch-autoencrypt.js",
     "tailwind:build": "tools\\tailwind.exe -c tailwind.config.js -i styles\\tailwind.css -o public\\css\\output.css --minify",
-    "tailwind:watch": "tools\\tailwind.exe --max-old-space-size=4096 -c tailwind.config.js -i styles\\tailwind.css -o public\\css\\output.css --watch"
+    "tailwind:watch": "tools\\tailwind.exe --max-old-space-size=4096 -c tailwind.config.js -i styles\\tailwind.css -o public\\css\\output.css --watch",
+    "test": "node tests/mariadb-sql.test.js"
   },
   "keywords": [],
   "author": "",
@@ -37,6 +38,7 @@
     "msnodesqlv8": "^4.5.0",
     "mssql": "^11.0.1",
     "multer": "^1.4.5-lts.2",
+    "mysql2": "^3.11.3",
     "node-stream-zip": "^1.15.0",
     "nodemailer": "^7.0.3",
     "rotating-file-stream": "^3.2.6",

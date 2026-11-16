@@ -69,12 +69,12 @@ async function handleRegister(req, res) {
     const blockFlag = config.email?.provider && config.email?.fromEmail ? 2 : 0;
 
     if (useTransaction) {
-      transaction = new sql.Transaction(pool);
+      transaction = pool.transaction(); // mssql or MariaDB (db/mariadb.js)
       await transaction.begin();
     }
 
     const getRequest = () => useTransaction
-      ? new sql.Request(transaction)
+      ? transaction.request()
       : pool.request();
 
     // user_account insert

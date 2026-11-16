@@ -1,0 +1,12 @@
+.git
+node_modules
+logs
+sessions
+tmp
+data/config.json
+data/sessions.sqlite
+data/.config-reload
+public/exports/*.zip
+ImageServer
+renders
+tools/*.exe

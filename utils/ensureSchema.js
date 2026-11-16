@@ -18,6 +18,28 @@ async function ensureInitialAdmin(pool) {
     `SELECT COUNT(*) AS count FROM cohauth.dbo.user_account`
   );
 
+  // In a container (no terminal) nobody can answer the questions below:
+  // CITYVAULT_ADMIN names an existing game login to make admin instead.
+  if (!process.stdin.isTTY) {
+    const authName = process.env.CITYVAULT_ADMIN;
+    if (Number(userCount.recordset[0].count) === 0) {
+      console.log('[WARN] No users yet: register one, then set CITYVAULT_ADMIN to it.');
+      return;
+    }
+    const adminCheck = await pool.request().query(
+      `SELECT COUNT(*) AS count FROM cohauth.dbo.user_account WHERE role = 'admin'`
+    );
+    if (authName) {
+      const result = await pool.request()
+        .input('authName', authName)
+        .query(`UPDATE cohauth.dbo.user_account SET role = 'admin' WHERE account = @authName AND role <> 'admin'`);
+      if (result.rowsAffected[0] > 0) console.log(`[SUCCESS] "${authName}" is now an admin (CITYVAULT_ADMIN).`);
+    } else if (Number(adminCheck.recordset[0].count) === 0) {
+      console.log('[WARN] No admin user: set CITYVAULT_ADMIN to a game login to make it admin.');
+    }
+    return;
+  }
+
   if (userCount.recordset[0].count === 0) {
     console.log("[WARN] No users found. Creating initial admin account...");
 

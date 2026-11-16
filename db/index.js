@@ -1,9 +1,27 @@
 const sql = require('mssql');
+const mariadb = require('./mariadb');
 const config = require(global.BASE_DIR + '/utils/config');
 const os = require('os');
 
+// "mssql" (SQL Server, the default) or "mariadb", per database in
+// config.json ("engine"); data/config.json can also take it from
+// CITYVAULT_DB_ENGINE.
+function engineOf(cfg) {
+  return String(cfg.engine || process.env.CITYVAULT_DB_ENGINE || 'mssql').toLowerCase();
+}
+
 function buildPoolConfig(cfg) {
   const dbHost = (cfg.dbHost || '').trim();
+  if (engineOf(cfg) === 'mariadb') {
+    return {
+      driver: 'mariadb',
+      server: dbHost,
+      database: cfg.dbName,
+      user: cfg.dbUser || '',
+      password: cfg.dbPass || '',
+      port: cfg.dbPort || 3306
+    };
+  }
   const dbName = cfg.dbName;
   const dbUser = cfg.dbUser || '';
   const dbPass = cfg.dbPass || '';
@@ -55,6 +73,11 @@ function buildPoolConfig(cfg) {
 
 async function connectPool(cfg) {
   const driverName = cfg.driver;
+  if (driverName === 'mariadb') {
+    const pool = new mariadb.Pool(cfg);
+    await pool.connect();
+    return pool;
+  }
   const driverModule = driverName === 'msnodesqlv8'
     ? require('mssql/msnodesqlv8')
     : require('mssql');
@@ -138,5 +161,6 @@ module.exports = {
   getChatPool,
   getGamePool,
   createPool,
+  engineOf,
   sql
 };
