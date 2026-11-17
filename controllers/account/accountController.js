@@ -1,6 +1,6 @@
 const sql = require('mssql');
 const { getAuthPool } = require(global.BASE_DIR + '/db');
-const { gameHashPassword } = require(global.BASE_DIR + '/utils/hashUtils');
+const { gameHashPassword, gameSalt } = require(global.BASE_DIR + '/utils/hashUtils');
 
 async function showAccountPage(req, res) {
   try {
@@ -61,9 +61,10 @@ async function updateAccount(req, res) {
       await pool.request()
         .input('account', sql.VarChar, account)
         .input('password', sql.VarChar, hexString)
+        .input('salt', sql.Int, gameSalt(account))
         .query(`
           UPDATE dbo.user_auth
-          SET password = CONVERT(BINARY(128), @password)
+          SET password = CONVERT(BINARY(128), @password), salt = @salt, hash_type = 1
           WHERE account = @account
         `);
     }

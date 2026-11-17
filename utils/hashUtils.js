@@ -19,4 +19,14 @@ function gameHashPassword(authname, password) {
     return digest; // already a Buffer
   }
 
-module.exports = { gameHashPassword };
+// The salt the client hashes with, as user_auth.salt holds it (a signed
+// 32-bit int). AuthServer salts with this column when it checks a password
+// itself (its admin port, password changes), so rows CityVault writes keep
+// it right rather than 0.
+function gameSalt(authname) {
+  const a32 = adler32(authname.toLowerCase()) >>> 0;
+  const swapped = (((a32 & 0xff) << 24) | ((a32 >>> 8 & 0xff) << 16) | ((a32 >>> 16 & 0xff) << 8) | (a32 >>> 24)) >>> 0;
+  return swapped >= 0x80000000 ? swapped - 0x100000000 : swapped;
+}
+
+module.exports = { gameHashPassword, gameSalt };

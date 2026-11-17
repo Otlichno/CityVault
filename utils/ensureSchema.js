@@ -1,6 +1,6 @@
 const readline = require('readline');
 const crypto = require('crypto');
-const { gameHashPassword } = require(global.BASE_DIR + '/utils/hashUtils');
+const { gameHashPassword, gameSalt } = require(global.BASE_DIR + '/utils/hashUtils');
 const { getAuthPool } = require(global.BASE_DIR + '/db/index');
 
 async function ensureSchema(authConfig) {
@@ -82,9 +82,10 @@ async function ensureInitialAdmin(pool) {
       await transaction.request()
         .input('username', username)
         .input('password', hexString)
+        .input('salt', gameSalt(username))
         .query(`
           INSERT INTO dbo.user_auth (account, password, salt, hash_type)
-          VALUES (@username, CONVERT(BINARY(128), @password), 0, 1)
+          VALUES (@username, CONVERT(BINARY(128), @password), @salt, 1)
         `);
 
       await transaction.request()

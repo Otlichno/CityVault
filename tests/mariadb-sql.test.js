@@ -61,6 +61,16 @@ for (const [input, text, names] of cases) {
   console.log('ok: cohauth.dbo. is the auth database by its name');
 }
 
+// The salt AuthServer and the client use (user_auth.salt, a signed int):
+// the same numbers as the CoH console's gameaccounts.client_salt.
+{
+  global.BASE_DIR = global.BASE_DIR || require('path').join(__dirname, '..');
+  const { gameSalt } = require('../utils/hashUtils');
+  assert.strictEqual(gameSalt('tester'), -1744692471);
+  assert.strictEqual(gameSalt('SmokePlayer'), -1392236772);
+  console.log('ok: password salt as AuthServer has it');
+}
+
 // mysql2 results in the mssql package's shape.
 {
   const rows = [{ a: 1 }];

@@ -1,5 +1,5 @@
 const sql = require('mssql');
-const { gameHashPassword } = require('../utils/hashUtils');
+const { gameHashPassword, gameSalt } = require('../utils/hashUtils');
 const { getAuthPool } = require(global.BASE_DIR + '/db');
 const { sendMail } = require('../services/mail');
 const crypto = require('crypto');
@@ -224,9 +224,10 @@ async function handleResetConfirm(req, res) {
     await pool.request()
       .input('account', sql.VarChar, account)
       .input('hash', sql.VarBinary(128), sqlBuffer)
+      .input('salt', sql.Int, gameSalt(account))
       .query(`
         UPDATE dbo.user_auth
-        SET password = @hash
+        SET password = @hash, salt = @salt, hash_type = 1
         WHERE account = @account;
 
         UPDATE dbo.user_account
