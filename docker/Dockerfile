@@ -13,6 +13,9 @@ WORKDIR /app
 COPY package.json package-lock.json patch-autoencrypt.js ./
 RUN npm install --no-audit --no-fund --omit=dev
 COPY . .
+# version.json is written at release time (gitignored); the update checker
+# reads it, so the image writes one from package.json.
+RUN [ -f version.json ] || node -e "require('fs').writeFileSync('version.json', JSON.stringify({version: require('./package.json').version}))"
 RUN rm -rf tools/*.exe ImageServer .git \
  && rm -f data/config.json data/sessions.sqlite \
  && cp -a data data.dist
