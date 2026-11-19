@@ -2,6 +2,14 @@ const sql = require('mssql');
 const path = require('path');
 const fs = require('fs');
 const { getGamePool, getAuthPool } = require(global.BASE_DIR + '/db');
+const serverApi = require(global.BASE_DIR + '/services/serverApi');
+
+// The result of an admin's last character edit, shown once on the page.
+function takeEditResult(req) {
+  const r = req.session && req.session.characterEditResult;
+  if (r) delete req.session.characterEditResult;
+  return r || null;
+}
 const { getAttributeMap } = require(global.BASE_DIR + '/utils/attributeMap');
 const { getOwnedBadgesFromBitfield } = require(global.BASE_DIR + '/utils/badgeParser');
 const { getBadgeDetails, getAllBadges, getBadgeEquivalents } = require(global.BASE_DIR + '/utils/badgeDetails');
@@ -430,6 +438,9 @@ async function showCharacter(req, res) {
         role: viewerRole,
         isAdmin,
         isGM,
+        editActions: viewerRole === 'admin' && serverApi.isConfigured(serverKey) ? serverApi.ACTIONS : null,
+        editNoValue: [...serverApi.NO_VALUE],
+        editResult: takeEditResult(req),
       });
 
     } catch (err) {

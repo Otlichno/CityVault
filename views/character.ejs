@@ -174,6 +174,35 @@
   </div>
 </div>
 
+<% if (typeof editResult !== 'undefined' && editResult) { %>
+  <div class="mt-4 p-2 rounded <%= editResult.ok ? 'bg-green-800' : 'bg-red-800' %> text-white text-sm"><%= editResult.text %></div>
+<% } %>
+<% if (typeof editActions !== 'undefined' && editActions) { %>
+  <!-- Admin: edits the game applies as the character (through ServerAPI). -->
+  <form action="/admin/character-edit" method="post" class="mt-4 p-3 rounded bg-gray-800 text-white text-sm"
+        onsubmit="return confirm('Apply this change to <%= stringClean(character.Name).replace(/['\\]/g, '') %>?');">
+    <div class="font-bold font-paragon mb-2">Admin: edit character</div>
+    <input type="hidden" name="serverKey" value="<%= serverKey %>">
+    <input type="hidden" name="containerId" value="<%= character.ContainerId %>">
+    <label class="block mb-1">Change
+      <select name="action" class="bg-gray-700 text-white p-1 rounded w-full">
+        <% for (const [key, label] of Object.entries(editActions)) { %>
+          <option value="<%= key %>"><%= label %></option>
+        <% } %>
+      </select>
+    </label>
+    <label class="block mb-1">Value
+      <input name="value" maxlength="120" class="bg-gray-700 text-white p-1 rounded w-full"
+             placeholder="level, amount, new name, badge, Set.Power or map id">
+    </label>
+    <label class="block mb-2">Reason
+      <input name="reason" maxlength="200" required class="bg-gray-700 text-white p-1 rounded w-full">
+    </label>
+    <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded">Apply</button>
+    <p class="mt-2 text-gray-400">Respec, costume slot and unstick need no value. The game applies the change, even while the player is on.</p>
+  </form>
+<% } %>
+
     </div>
 
     <!-- Right Column: Character Name, Bio, and Badges -->

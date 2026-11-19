@@ -20,7 +20,7 @@ if [ -d /app/data.dist ]; then
 fi
 
 # *_FILE variables (Docker secrets) become the plain ones.
-for v in CITYVAULT_DB_PASSWORD CITYVAULT_SESSION_SECRET CITYVAULT_SMTP_PASSWORD CITYVAULT_MAILERSEND_KEY; do
+for v in CITYVAULT_DB_PASSWORD CITYVAULT_SESSION_SECRET CITYVAULT_SMTP_PASSWORD CITYVAULT_MAILERSEND_KEY CITYVAULT_SERVERAPI_TOKEN; do
     eval "file=\${${v}_FILE:-}"
     if [ -n "$file" ] && [ -r "$file" ]; then
         eval "export $v=\"\$(cat \"\$file\")\""
@@ -75,6 +75,14 @@ if (env.CITYVAULT_DB_HOST) {
   const server = withDb(cfg.servers[key] || {}, env.CITYVAULT_GAME_DB || 'cohdb');
   set(server, 'label', env.CITYVAULT_SERVER_LABEL || server.label || key);
   set(server, 'badgeVersion', env.CITYVAULT_BADGE_VERSION || server.badgeVersion || 'i25');
+  // The shard's ServerAPI: admins' character edits go through it, so the
+  // game applies them (see services/serverApi.js).
+  if (env.CITYVAULT_SERVERAPI_URL) {
+    server.serverApi = { url: env.CITYVAULT_SERVERAPI_URL, token: env.CITYVAULT_SERVERAPI_TOKEN || '' };
+    set(server.serverApi, 'shard', env.CITYVAULT_SERVERAPI_SHARD);
+  } else {
+    delete server.serverApi;
+  }
   cfg.servers[key] = server;
 }
 
