@@ -9,12 +9,26 @@ const sql = require('mssql');
 exports.clearCostumeRender = async (req, res) => {
     const { serverKey, containerId, slot = 0 } = req.body;
 
+    // Signed-in users only, and only names that make a portrait file: the
+    // fields used to go into the path as they came (a ../ deleted any .png).
+    if (!req.session?.username) {
+        return res.status(401).send('Sign in first.');
+    }
     if (!serverKey || !containerId) {
         return res.status(400).send('Missing required parameters.');
     }
+    const servers = require(global.BASE_DIR + '/utils/config').servers || {};
+    if (!Object.prototype.hasOwnProperty.call(servers, serverKey) || !/^[A-Za-z0-9_-]{1,64}$/.test(String(serverKey)) ||
+        !/^\d{1,10}$/.test(String(containerId)) || !/^\d{1,3}$/.test(String(slot))) {
+        return res.status(400).send('Invalid parameters.');
+    }
 
     const filename = `${serverKey}_${containerId}${slot == 0 ? '' : `_${slot}`}`;
-    const imagePath = path.join(global.BASE_DIR, 'public', 'images', 'portrait', `${filename}.png`);
+    const portraitDir = path.join(global.BASE_DIR, 'public', 'images', 'portrait');
+    const imagePath = path.join(portraitDir, `${filename}.png`);
+    if (path.dirname(imagePath) !== portraitDir) {
+        return res.status(400).send('Invalid parameters.');
+    }
 
     try {
         await fs.unlink(imagePath);

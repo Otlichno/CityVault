@@ -19,13 +19,24 @@ async function handleRegister(req, res) {
     return res.status(403).send('Registration is disabled.');
   }
   const { username, password, email } = req.body;
-  const hashedPassword = gameHashPassword(username, password);
-  const hexString = hashedPassword.toString('hex');
 
-  if (username.length > 14) {
-    req.flash('error', 'Username must be 14 characters or fewer.');
+  // The game's rules for a login (as the shard's console uses): other
+  // characters end up in AuthServer's SQL and logs, and the game client's
+  // login box takes 16 password characters.
+  if (typeof username !== 'string' || !/^[A-Za-z][A-Za-z0-9_]{2,13}$/.test(username)) {
+    req.flash('error', 'Usernames are 3-14 letters, digits or _, starting with a letter.');
     return res.redirect('/register');
   }
+  if (typeof password !== 'string' || password.length < 8 || password.length > 16) {
+    req.flash('error', 'Passwords are 8-16 characters (the game\'s login box takes 16).');
+    return res.redirect('/register');
+  }
+  if (typeof email !== 'string') {
+    req.flash('error', 'Invalid email format.');
+    return res.redirect('/register');
+  }
+  const hashedPassword = gameHashPassword(username, password);
+  const hexString = hashedPassword.toString('hex');
 
   const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
   if (!emailRegex.test(email)) {
