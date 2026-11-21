@@ -5,13 +5,32 @@ const { finished } = require('stream');
 const AdmZip = require('adm-zip');
 const { spawn, exec } = require('child_process');
 		
-async function downloadAndExtractUpdate(req, res) {
-  const zipUrl = req.body.zipUrl;
-  console.log('[Update] Downloading from:', zipUrl);
+const { isAdmin } = require(global.BASE_DIR + '/utils/roles');
 
-  if (!zipUrl || !zipUrl.endsWith('.zip')) {
-    return res.status(400).send('Invalid zip URL');
+// Where an update may come from: CityVault's own releases on GitHub. The
+// URL used to be any https address ending in .zip, so whoever could reach
+// this page (GMs too) could install their own code and run npm on it.
+const UPDATE_REPO = process.env.CITYVAULT_UPDATE_REPO || 'CaitlynMainer/CityVault';
+function allowedUpdateUrl(zipUrl) {
+  let u;
+  try { u = new URL(String(zipUrl)); } catch { return false; }
+  const repoPath = `/${UPDATE_REPO}/`;
+  return u.protocol === 'https:' && !u.username && !u.password && u.pathname.endsWith('.zip') &&
+    ((u.hostname === 'github.com' && u.pathname.startsWith(repoPath)) ||
+     (u.hostname === 'codeload.github.com' && u.pathname.startsWith(repoPath)));
+}
+
+async function downloadAndExtractUpdate(req, res) {
+  if (!isAdmin(req.user?.role)) return res.status(403).send('Forbidden');
+  // In a container the code is the image's: an update is a new image.
+  if (process.env.CITYVAULT_DISABLE_SELF_UPDATE === '1') {
+    return res.status(409).send('Updates are installed by rebuilding the portal image, not from this page.');
   }
+  const zipUrl = req.body.zipUrl;
+  if (!allowedUpdateUrl(zipUrl)) {
+    return res.status(400).send(`Updates come only from https://github.com/${UPDATE_REPO} releases.`);
+  }
+  console.log('[Update] Downloading from:', zipUrl);
 
   const tmpPath = path.join(global.BASE_DIR, 'tmp_update.zip');
   const tmpExtractDir = path.join(global.BASE_DIR, 'tmpExtract');

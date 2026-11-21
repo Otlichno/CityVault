@@ -393,10 +393,12 @@ function openNotesModal(uid, username) {
         return;
       }
 
+      // Notes are plain text: escaped (they used to go in as HTML).
+      const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
       container.innerHTML = data.notes.map(note => `
         <div class="border border-gray-300 dark:border-gray-700 rounded p-2 bg-gray-100 dark:bg-gray-700">
-          <div class="text-sm text-gray-700 dark:text-gray-300 mb-1">${note.author} @ ${new Date(note.created_at).toLocaleString()}</div>
-          <div class="text-sm text-gray-900 dark:text-white">${note.note}</div>
+          <div class="text-sm text-gray-700 dark:text-gray-300 mb-1">${esc(note.author)} @ ${esc(new Date(note.created_at).toLocaleString())}</div>
+          <div class="text-sm text-gray-900 dark:text-white">${esc(note.note)}</div>
         </div>
       `).join('');
   });

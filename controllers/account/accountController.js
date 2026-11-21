@@ -47,6 +47,14 @@ async function updateAccount(req, res) {
       return req.session.save(() => res.redirect('/account'));
     }
 
+    // Check the new password before changing anything.
+    const problem = newPassword && require(global.BASE_DIR + '/controllers/loginController').passwordProblem(newPassword);
+    if (problem) {
+      req.flash('error', problem);
+      req.session._flash_init = true;
+      return req.session.save(() => res.redirect('/account'));
+    }
+
     if (email) {
       await pool.request()
         .input('account', sql.VarChar, account)

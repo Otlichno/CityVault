@@ -4,7 +4,9 @@
 
 function isInternalPath(url) {
   // prevent open-redirects; only allow same-site paths
-  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
+  // (a backslash too: browsers read /\evil.example as //evil.example)
+  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//') && !url.includes('\\') &&
+    !/[\u0000-\u001f]/.test(url);
 }
 
 function isAssetPath(url) {

@@ -63,6 +63,9 @@ module.exports = async function startApp(config) {
   };
 
   const app = express();
+  // Behind the reverse proxy (Traefik), which terminates TLS: needed for
+  // the Secure cookie below and for req.secure.
+  if (config.trustProxy !== false) app.set('trust proxy', 1);
 
   app.use(cookieParser());
   app.use(express.urlencoded({ extended: true }));
@@ -74,11 +77,17 @@ module.exports = async function startApp(config) {
     }),
     secret: config.session_secret,
     resave: false,
-    saveUninitialized: true,
+    // Only sessions that hold something are stored: every visitor (and bot)
+    // used to get a session row kept for a year.
+    saveUninitialized: false,
     rolling: true,
     cookie: {
       maxAge: 365 * 24 * 60 * 60 * 1000,
-      secure: config.useAutoEncrypt === true,
+      httpOnly: true,
+      // Not sent with requests from other sites (forms posted from another
+      // page); Secure whenever the request came over HTTPS (also via the proxy).
+      sameSite: 'lax',
+      secure: config.useAutoEncrypt === true ? true : 'auto',
       signed: true
     }
   }));
@@ -134,6 +143,7 @@ module.exports = async function startApp(config) {
   });
 
   app.locals.stringClean = stringClean;
+  app.locals.cleanNewsHtml = require('./utils/newsHtml').cleanNewsHtml;
 
   app.set('view engine', 'ejs');
   // Look in userContent/views first, fallback to views

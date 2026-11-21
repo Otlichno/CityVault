@@ -43,7 +43,8 @@ function readNews() {
       return res.status(403).send('Forbidden');
     }
     const news = readNews();
-    const { id, title, content } = req.body;
+    const { id, title } = req.body;
+    const content = require(global.BASE_DIR + '/utils/newsHtml').cleanNewsHtml(req.body.content);
   
     // HTML checkboxes only send a value if checked — typically "on"
     const pinned = req.body.pinned === 'on';

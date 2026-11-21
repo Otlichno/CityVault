@@ -5,6 +5,43 @@ const archiver = require('archiver');
 const { getGamePool, getAuthPool } = require(global.BASE_DIR + '/db');
 const crypto = require('crypto');
 
+// Who may export what: a character's owner, or a GM/admin (role read fresh
+// from the database by attachUserInfo, not the one cached in the session).
+// Exports hold private data (in-game mail, friends, account rows).
+function isElevated(req) {
+  return ['admin', 'gm'].includes(req.user?.role);
+}
+
+async function ownsCharacter(viewer, serverKey, containerId) {
+  const gamePool = await getGamePool(serverKey);
+  if (!gamePool) return false;
+  const ch = await gamePool.request()
+    .input('id', sql.Int, containerId)
+    .query(`SELECT AuthId FROM dbo.Ents WHERE ContainerId = @id`);
+  if (!ch.recordset[0]) return false;
+  const authPool = await getAuthPool();
+  const owner = await authPool.request()
+    .input('uid', sql.Int, ch.recordset[0].AuthId)
+    .query(`SELECT account FROM dbo.user_account WHERE uid = @uid`);
+  const account = owner.recordset[0]?.account;
+  return !!account && String(account).toLowerCase() === String(viewer).toLowerCase();
+}
+
+// An export's zip: public/exports/<task id>/<name>.zip. The task id is a
+// random UUID, so the address cannot be guessed (they used to be
+// Export-<account>-<server>.zip, downloadable by anyone); removed after an hour.
+const EXPORT_KEEP_MS = 60 * 60 * 1000;
+function safeFileName(s) {
+  return String(s).replace(/[^A-Za-z0-9 _.-]/g, '_').replace(/^\.+/, '_').slice(0, 80) || 'export';
+}
+async function exportZipPath(taskId, baseName) {
+  const dir = path.join(global.BASE_DIR, 'public', 'exports', taskId);
+  await fs.ensureDir(dir);
+  setTimeout(() => fs.remove(dir).catch(() => {}), EXPORT_KEEP_MS).unref();
+  const name = `${safeFileName(baseName)}.zip`;
+  return { file: path.join(dir, name), url: `/exports/${taskId}/${encodeURIComponent(name)}` };
+}
+
 const alwaysExport = ['CostumeParts'];
 const conditionalExport = ['Costumes'];
 
@@ -66,7 +103,7 @@ async function exportAllCharacters(serverKey, targetAccount, isAdmin, taskId) {
   try {
     const authPool = await getAuthPool();
     const gamePool = await getGamePool(serverKey);
-	  if (!gamePool) return res.status(400).send('Invalid server.');
+    if (!gamePool) throw new Error('Invalid server.');
 
     const userResult = await authPool.request()
       .input('account', sql.VarChar, targetAccount)
@@ -114,12 +151,8 @@ async function exportAllCharacters(serverKey, targetAccount, isAdmin, taskId) {
       if (task) task.completed++;
     }
 
-    const zipName = `Export-${targetAccount}-${serverKey}.zip`;
-    const publicExportDir = path.join(global.BASE_DIR, 'public', 'exports');
-    await fs.ensureDir(publicExportDir);
-
-    const zipPath = path.join(publicExportDir, zipName);
-    const output = fs.createWriteStream(zipPath);
+    const zip = await exportZipPath(taskId, `Export-${targetAccount}-${serverKey}`);
+    const output = fs.createWriteStream(zip.file);
     const archive = archiver('zip', { zlib: { level: 9 } });
 
     archive.pipe(output);
@@ -130,7 +163,7 @@ async function exportAllCharacters(serverKey, targetAccount, isAdmin, taskId) {
     if (taskDone) {
       taskDone.status = 'done';
       taskDone.message = `Exported ${characters.length} characters.`;
-      taskDone.path = `/exports/${zipName}`;
+      taskDone.path = zip.url;
     }
 
   } catch (err) {
@@ -234,7 +267,6 @@ async function exportCharacter(req, res) {
 async function queueCharacterExport(req, res) {
   const { serverKey, containerId, targetAccount } = req.body;
   const viewer = req.session?.username;
-  const viewerRole = req.session?.role;
 
   if (!viewer) return res.status(401).json({ status: 'unauthorized' });
   if (!serverKey) return res.status(400).json({ status: 'error', message: 'Missing serverKey' });
@@ -242,8 +274,21 @@ async function queueCharacterExport(req, res) {
     return res.status(400).json({ status: 'error', message: 'Must specify containerId or targetAccount' });
   }
 
-  const isAdmin = ['admin', 'gm'].includes(viewerRole);
+  const isAdmin = isElevated(req);
   const exportAccount = targetAccount || viewer;
+  // A player exports only their own characters (any character id and any
+  // account used to be accepted).
+  if (!isAdmin) {
+    if (targetAccount && String(targetAccount).toLowerCase() !== String(viewer).toLowerCase()) {
+      return res.status(403).json({ status: 'forbidden', message: 'You can export only your own characters.' });
+    }
+    if (containerId) {
+      const id = parseInt(containerId, 10);
+      if (!Number.isInteger(id) || !(await ownsCharacter(viewer, serverKey, id))) {
+        return res.status(403).json({ status: 'forbidden', message: 'You can export only your own characters.' });
+      }
+    }
+  }
   const taskId = crypto.randomUUID();
 
   global.characterExportTasks.set(taskId, {
@@ -261,7 +306,7 @@ async function queueCharacterExport(req, res) {
     try {
       if (containerId) {
         const gamePool = await getGamePool(serverKey);
-	  if (!gamePool) return res.status(400).send('Invalid server.');
+        if (!gamePool) throw new Error('Invalid server.');
         const charQuery = await gamePool.request()
           .input('id', sql.Int, containerId)
           .query(`SELECT Name FROM dbo.Ents WHERE ContainerId = @id`);
@@ -272,12 +317,8 @@ async function queueCharacterExport(req, res) {
         const characterName = character.Name;
         await exportCharacterToDisk(serverKey, parseInt(containerId), characterName, stagingDir);
 
-        const zipName = `Export-${characterName}-${serverKey}.zip`;
-        const publicExportDir = path.join(global.BASE_DIR, 'public', 'exports');
-        await fs.ensureDir(publicExportDir);
-
-        const zipPath = path.join(publicExportDir, zipName);
-        const output = fs.createWriteStream(zipPath);
+        const zip = await exportZipPath(taskId, `Export-${characterName}-${serverKey}`);
+        const output = fs.createWriteStream(zip.file);
         const archive = archiver('zip', { zlib: { level: 9 } });
 
         archive.pipe(output);
@@ -288,7 +329,7 @@ async function queueCharacterExport(req, res) {
         if (task) {
           task.status = 'done';
           task.message = `Exported ${characterName}.`;
-          task.path = `/exports/${zipName}`;
+          task.path = zip.url;
         }
       } else {
         await exportAllCharacters(serverKey, exportAccount, isAdmin, taskId);
@@ -320,6 +361,9 @@ function checkExportStatus(req, res) {
 }
 
 module.exports = {
+  ownsCharacter,
+  isElevated,
+  exportZipPath,
   exportCharacter,
   exportCharacterToDisk,
   exportAllCharacters,

@@ -31,7 +31,8 @@ RUN chmod +x /usr/local/bin/cityvault-entrypoint \
  && mkdir -p /app/data /app/logs /app/public/exports /app/userContent \
  && chown -R node:node /app
 USER node
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    CITYVAULT_DISABLE_SELF_UPDATE=1
 EXPOSE 3000
 VOLUME ["/app/data", "/app/public/exports", "/app/userContent"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \

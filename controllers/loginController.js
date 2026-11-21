@@ -5,12 +5,23 @@ const { sendMail } = require('../services/mail');
 const crypto = require('crypto');
 const config = require(global.BASE_DIR + '/utils/config');
 
+// The game client's login box takes 16 characters.
+function passwordProblem(password) {
+  if (typeof password !== 'string' || password.length < 8 || password.length > 16)
+    return 'Passwords are 8-16 characters (the game\'s login box takes 16).';
+  return null;
+}
+
 function handleLoginPage(req, res) {
   res.render('login');
 }
 
 async function handleLogin(req, res) {
   const { username, password } = req.body;
+  if (typeof username !== 'string' || typeof password !== 'string' || !username || username.length > 14) {
+    req.flash('error', 'Invalid username or password.');
+    return res.redirect('/login');
+  }
   const rawHash = gameHashPassword(username, password); // 64-byte Buffer
   const hexString = rawHash.toString('hex'); // 128-char hex string
   const sqlStyleBuffer = Buffer.from(hexString, 'utf8');
@@ -21,7 +32,7 @@ async function handleLogin(req, res) {
     const result = await pool.request()
       .input('username', sql.VarChar, username)
       .query(`
-        SELECT password, role, block_flag
+        SELECT ua.account, password, role, block_flag
         FROM dbo.user_account ua
         JOIN dbo.user_auth auth ON ua.account = auth.account
         WHERE ua.account = @username
@@ -41,7 +52,9 @@ async function handleLogin(req, res) {
 
     const user = result.recordset[0];
 
-    if (user.block_flag === 1) {
+    // block_flag is a bit set (1 banned, 2 unconfirmed; the console bans with
+    // block_flag | 1): compared with === a banned, unconfirmed account (3) got in.
+    if (user.block_flag & 1) {
       req.flash('error', 'Your account is banned.');
       req.session._flash_init = true;
       return req.session.save(err => {
@@ -51,7 +64,7 @@ async function handleLogin(req, res) {
         }
         res.redirect('/login');
       });
-    } else if (user.block_flag === 2) {
+    } else if (user.block_flag & 2) {
       req.flash('error', 'Your account has not been confirmed via email.');
       req.session._flash_init = true;
       return req.session.save(err => {
@@ -63,9 +76,9 @@ async function handleLogin(req, res) {
       });
     }
 
-    const stored = user.password;
+    const stored = user.password ? Buffer.from(user.password) : Buffer.alloc(0);
 
-    if (!stored.equals(sqlStyleBuffer)) {
+    if (stored.length !== sqlStyleBuffer.length || !crypto.timingSafeEqual(stored, sqlStyleBuffer)) {
       req.flash('error', 'Invalid username or password.');
       req.session._flash_init = true;
       return req.session.save(err => {
@@ -77,20 +90,25 @@ async function handleLogin(req, res) {
       });
     }
 
-    req.session.username = username;
-    req.session.role = user.role;
-
-    req.session.save(err => {
-      if (err) {
-        console.error('Session save error:', err);
-        req.flash('error', 'Login failed due to session error.');
+    // A new session id at sign-in (a session id planted before it would
+    // otherwise become signed in), with the account name as stored: as typed
+    // it failed the owner checks that compare names ("Bob" vs "bob").
+    const returnTo = req.session.returnTo;
+    req.session.regenerate(regenErr => {
+      if (regenErr) {
+        console.error('Session regenerate error:', regenErr);
         return res.redirect('/login');
       }
-
-      const redirectTo = req.session.returnTo || '/';
-      delete req.session.returnTo;
-      console.log('[Login POST] returnTo:', redirectTo);
-      res.redirect(redirectTo);
+      req.session.username = user.account;
+      req.session.role = user.role;
+      req.session.save(err => {
+        if (err) {
+          console.error('Session save error:', err);
+          req.flash('error', 'Login failed due to session error.');
+          return res.redirect('/login');
+        }
+        res.redirect(returnTo || '/');
+      });
     });
   } catch (err) {
     console.error(err);
@@ -200,18 +218,25 @@ async function handleResetConfirmPage(req, res) {
 
 async function handleResetConfirm(req, res) {
   const { token, password } = req.body;
-  if (!token || !password) {
+  if (typeof token !== 'string' || !token || typeof password !== 'string' || !password) {
     req.flash('error', 'Missing token or password.');
     return res.redirect('/login');
+  }
+  const problem = passwordProblem(password);
+  if (problem) {
+    req.flash('error', problem);
+    return res.redirect(`/login/reset/confirm?token=${encodeURIComponent(token)}`);
   }
 
   try {
     const pool = await getAuthPool();
     const result = await pool.request()
       .input('token', sql.VarChar, token)
-      .query('SELECT account FROM dbo.user_account WHERE reset_token = @token');
+      .query('SELECT account, reset_expires FROM dbo.user_account WHERE reset_token = @token');
 
-    if (result.recordset.length === 0) {
+    // The expiry was checked only when the form was shown: an old link from
+    // a mailbox still set a new password.
+    if (result.recordset.length === 0 || !(Date.now() <= parseInt(result.recordset[0].reset_expires, 10))) {
       req.flash('error', 'Invalid or expired reset token.');
       return res.redirect('/login');
     }
@@ -245,6 +270,7 @@ async function handleResetConfirm(req, res) {
 }
 
 module.exports = {
+  passwordProblem,
   handleLoginPage,
   handleLogin,
   handleResetPage,

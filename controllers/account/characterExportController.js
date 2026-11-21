@@ -39,7 +39,6 @@ function showExportStatusPage(req, res) {
 async function handleExportSubmit(req, res) {
   const { serverKey } = req.body;
   const viewer = req.session?.username;
-  const role = req.session?.role;
 
   if (!viewer || !serverKey) return res.redirect('/login');
 
@@ -51,7 +50,7 @@ async function handleExportSubmit(req, res) {
   });
 
   const { exportAllCharacters } = require(global.BASE_DIR + '/controllers/api/characterExportController');
-  exportAllCharacters(serverKey, viewer, ['admin', 'gm'].includes(role), taskId);
+  exportAllCharacters(serverKey, viewer, false, taskId); // always the viewer's own account
 
   res.redirect(`/account/character-export/status/${taskId}`);
 }
@@ -59,9 +58,14 @@ async function handleExportSubmit(req, res) {
 async function startSingleExport(req, res) {
   const { serverKey, containerId } = req.params;
   const viewer = req.session?.username;
-  const role = req.session?.role;
 
   if (!viewer) return res.redirect('/login');
+  const api = require(global.BASE_DIR + '/controllers/api/characterExportController');
+  const id = parseInt(containerId, 10);
+  // Only the owner (or a GM/admin): any character id used to be exported.
+  if (!Number.isInteger(id) || (!api.isElevated(req) && !(await api.ownsCharacter(viewer, serverKey, id)))) {
+    return res.status(403).send('You can export only your own characters.');
+  }
 
   const taskId = crypto.randomUUID();
   global.characterExportTasks.set(taskId, {
@@ -78,7 +82,7 @@ async function startSingleExport(req, res) {
   setImmediate(async () => {
     try {
       const gamePool = await require(global.BASE_DIR + '/db').getGamePool(serverKey);
-	  if (!gamePool) return res.status(400).send('Invalid server.');
+      if (!gamePool) throw new Error('Invalid server.');
       const result = await gamePool.request()
         .input('id', sql.Int, containerId)
         .query(`SELECT Name FROM dbo.Ents WHERE ContainerId = @id`);
@@ -86,9 +90,8 @@ async function startSingleExport(req, res) {
 
       await exportCharacterToDisk(serverKey, parseInt(containerId), name, stagingDir);
 
-      const zipName = `Export-${name}-${serverKey}.zip`;
-      const zipPath = path.join(global.exportTmpDir, zipName);
-      const output = fs.createWriteStream(zipPath);
+      const zip = await api.exportZipPath(taskId, `Export-${name}-${serverKey}`);
+      const output = fs.createWriteStream(zip.file);
       const archive = require('archiver')('zip', { zlib: { level: 9 } });
 
       archive.pipe(output);
@@ -98,7 +101,7 @@ async function startSingleExport(req, res) {
       global.characterExportTasks.set(taskId, {
         status: 'done',
         message: `Exported ${name}.`,
-        path: `/tmp/exports/${zipName}`
+        path: zip.url
       });
     } catch (err) {
       global.characterExportTasks.set(taskId, {
